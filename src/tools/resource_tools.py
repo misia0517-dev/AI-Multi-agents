@@ -1,25 +1,11 @@
 from __future__ import annotations
+
 import math
-from typing import Dict, Any, List
+from typing import Any, Dict
+
 import pandas as pd
 
-
-PENALTY = {
-    "tier1_sla_violation":   100,
-    "tier2_sla_violation":    40,
-    "cold_chain_violation":   80,
-    "non_sla_delay":          10,
-}
-
-CORRIDOR_SLA_TIER = {
-    "C1_I95_NJ_BOS": "Tier 1",
-    "C2_NJ_PHL":     "Tier 2",
-}
-
-CORRIDOR_PRIORITY = ["C1_I95_NJ_BOS", "C2_NJ_PHL"]
-
-TRUCK_CAPACITY = 10
-PACKING_BUFFER = 1.10
+from tools.policy_tools import DispatchPolicy, load_dispatch_policy
 
 
 def load_resource_availability(csv_path: str) -> Dict[str, Dict[str, int]]:
@@ -28,10 +14,9 @@ def load_resource_availability(csv_path: str) -> Dict[str, Dict[str, int]]:
 
     availability: Dict[str, Dict[str, int]] = {}
     for _, row in df.iterrows():
-        day   = str(row["day"]).strip()
-        rtype = str(row["resource_type"]).strip()
-        count = int(row["available_count"])
-        availability.setdefault(day, {})[rtype] = count
+        day = str(row["day"]).strip()
+        resource_type = str(row["resource_type"]).strip()
+        availability.setdefault(day, {})[resource_type] = int(row["available_count"])
 
     return availability
 
@@ -40,118 +25,121 @@ def allocate_resources(
     corridor_day_summary: Dict[str, Any],
     availability: Dict[str, Dict[str, int]],
     corridor_weather_risk: Dict[str, Any] | None = None,
+    policy_path: str | None = None,
 ) -> Dict[str, Any]:
-    allocation_plan: Dict[str, Any] = {}
+    policy = load_dispatch_policy(policy_path)
+    allocation: Dict[str, Any] = {}
     total_penalty = 0
     tier1_units_impacted = 0
 
     for day in ["Day0", "Day1"]:
-        avail = dict(availability.get(day, {}))
+        remaining = dict(availability.get(day, {}))
         day_plan: Dict[str, Any] = {
-            "available": dict(avail),
-            "corridors": {},
-            "day_total_penalty": 0,
-            "resource_shortfall": {},
-        }
+                  "available": dict(remaining),
+                  "corridors": {},
+                  "day_total_penalty": 0,
+                  "resource_shortfall": {},
+       }
 
-        for corridor_id in CORRIDOR_PRIORITY:
-            if corridor_id not in corridor_day_summary:
+
+        corridor_order = [c for c in policy.corridor_priority if c in corridor_day_summary]
+        corridor_order.extend(c for c in corridor_day_summary if c not in corridor_order)
+
+        for corridor_id in corridor_order:
+            stats = corridor_day_summary.get(corridor_id, {}).get(day, {})
+            if not stats:
                 continue
 
-            stats    = corridor_day_summary[corridor_id].get(day, {})
-            sla_tier = CORRIDOR_SLA_TIER.get(corridor_id, "Tier 2")
+            sla_tier = stats.get("sla_tier", "Tier 2")
+            need_temp = int(stats.get("required_temp_trucks", 0))
+            need_std = int(stats.get("required_std_trucks", 0))
+            temp_units = int(stats.get("temp_controlled_units", 0))
+            std_units = int(stats.get("standard_units", 0))
+            total_units = int(stats.get("total_valid_units", 0))
 
-            need_temp   = stats.get("required_temp_trucks", 0)
-            need_std    = stats.get("required_std_trucks",  0)
-            need_drv    = stats.get("required_drivers",     0)
-            temp_units  = stats.get("temp_controlled_units", 0)
-            std_units   = stats.get("standard_units", 0)
-            total_units = stats.get("total_valid_units", 0)
-
-            wx_risk = 0
-            if corridor_weather_risk and corridor_id in corridor_weather_risk:
-                wx_risk = corridor_weather_risk[corridor_id].get("risk_score_48h", 0)
-
-            allocated_temp = min(need_temp, avail.get("truck_temp_controlled", 0))
-            avail["truck_temp_controlled"] = max(0, avail.get("truck_temp_controlled", 0) - allocated_temp)
+            allocated_temp = min(need_temp, int(remaining.get("truck_temp_controlled", 0)))
+            remaining["truck_temp_controlled"] = int(remaining.get("truck_temp_controlled", 0)) - allocated_temp
             temp_shortfall = need_temp - allocated_temp
 
-            allocated_std = min(need_std, avail.get("truck_standard", 0))
-            avail["truck_standard"] = max(0, avail.get("truck_standard", 0) - allocated_std)
+            allocated_std = min(need_std, int(remaining.get("truck_standard", 0)))
+            remaining["truck_standard"] = int(remaining.get("truck_standard", 0)) - allocated_std
             std_shortfall = need_std - allocated_std
 
-            drivers_needed_actual = allocated_temp + allocated_std
-            allocated_drv = min(drivers_needed_actual, avail.get("driver", 0))
-            avail["driver"] = max(0, avail.get("driver", 0) - allocated_drv)
-            drv_shortfall = drivers_needed_actual - allocated_drv
+            drivers_needed = allocated_temp + allocated_std
+            allocated_drivers = min(drivers_needed, int(remaining.get("driver", 0)))
+            remaining["driver"] = int(remaining.get("driver", 0)) - allocated_drivers
+            driver_shortfall = drivers_needed - allocated_drivers
 
-            units_per_truck = math.floor(TRUCK_CAPACITY / PACKING_BUFFER)
-
+            units_per_truck = max(1, math.floor(policy.truck_capacity / policy.packing_buffer))
             undelivered_temp = min(temp_units, temp_shortfall * units_per_truck)
-            undelivered_std  = min(std_units,  std_shortfall  * units_per_truck)
-            undelivered_drv  = drv_shortfall * units_per_truck
+            undelivered_std = min(std_units, std_shortfall * units_per_truck)
+            undelivered_driver = min(total_units, driver_shortfall * units_per_truck)
+            undelivered_units = min(total_units, undelivered_temp + undelivered_std + undelivered_driver)
 
-            total_undelivered = min(total_units, undelivered_temp + undelivered_std + undelivered_drv)
+            sla_penalty_rate = (
+                policy.penalty["tier1_sla_violation"]
+                if sla_tier == "Tier 1"
+                else policy.penalty["tier2_sla_violation"]
+            )
+            corridor_penalty = (
+                undelivered_units * sla_penalty_rate
+                + undelivered_temp * policy.penalty["cold_chain_violation"]
+            )
 
-            sla_penalty_rate  = PENALTY["tier1_sla_violation"] if sla_tier == "Tier 1" else PENALTY["tier2_sla_violation"]
-            cold_penalty_rate = PENALTY["cold_chain_violation"]
+            wx = (corridor_weather_risk or {}).get(corridor_id, {})
+            weather_score = int(wx.get("risk_score_48h", wx.get("risk_score_0_3", 0)))
 
-            penalty_sla      = int(total_undelivered) * sla_penalty_rate
-            penalty_cold     = int(undelivered_temp)  * cold_penalty_rate
-            corridor_penalty = penalty_sla + penalty_cold
+            if sla_tier == "Tier 1":
+                tier1_units_impacted += undelivered_units
 
             total_penalty += corridor_penalty
-            if sla_tier == "Tier 1":
-                tier1_units_impacted += int(total_undelivered)
-
-            can_dispatch_all = (temp_shortfall == 0 and std_shortfall == 0 and drv_shortfall == 0)
-
-            day_plan["corridors"][corridor_id] = {
-                "sla_tier":              sla_tier,
-                "total_units":           total_units,
-                "allocated_temp_trucks": allocated_temp,
-                "allocated_std_trucks":  allocated_std,
-                "allocated_drivers":     allocated_drv,
-                "shortfall_temp_trucks": temp_shortfall,
-                "shortfall_std_trucks":  std_shortfall,
-                "shortfall_drivers":     drv_shortfall,
-                "undelivered_units":     int(total_undelivered),
-                "corridor_penalty":      corridor_penalty,
-                "can_dispatch_all":      can_dispatch_all,
-                "weather_risk_score":    wx_risk,
-                "travel_buffer_pct":     _travel_buffer(wx_risk),
-                "escalation_required":   wx_risk >= 3,
-            }
             day_plan["day_total_penalty"] += corridor_penalty
+            day_plan["corridors"][corridor_id] = {
+                "sla_tier": sla_tier,
+                "total_units": total_units,
+                "allocated_temp_trucks": allocated_temp,
+                "allocated_std_trucks": allocated_std,
+                "allocated_drivers": allocated_drivers,
+                "shortfall_temp_trucks": temp_shortfall,
+                "shortfall_std_trucks": std_shortfall,
+                "shortfall_drivers": driver_shortfall,
+                "undelivered_units": undelivered_units,
+                "corridor_penalty": corridor_penalty,
+                "can_dispatch_all": corridor_penalty == 0,
+                "weather_risk_score": weather_score,
+                "travel_buffer_pct": _travel_buffer(weather_score, policy),
+                "escalation_required": weather_score >= policy.escalation_score,
+            }
 
-        day_plan["remaining_pool"] = dict(avail)
-        allocation_plan[day] = day_plan
+        day_plan["remaining_pool"] = dict(remaining)
+        allocation[day] = day_plan
 
-    allocation_plan["summary_48h"] = {
-        "total_penalty_score":    total_penalty,
-        "tier1_units_impacted":   tier1_units_impacted,
-        "allocation_feasible":    total_penalty == 0,
-        "recommendation":         _summarise_recommendation(allocation_plan, total_penalty),
+    allocation["summary_48h"] = {
+        "total_penalty_score": total_penalty,
+        "tier1_units_impacted": tier1_units_impacted,
+        "allocation_feasible": total_penalty == 0,
+        "recommendation": _summarise_recommendation(allocation, total_penalty),
     }
-
-    return allocation_plan
-
-
-def _travel_buffer(risk_score: int) -> int:
-    return {0: 0, 1: 10, 2: 25, 3: 40}.get(risk_score, 40)
+    return allocation
 
 
-def _summarise_recommendation(plan: Dict[str, Any], total_penalty: int) -> str:
+def _travel_buffer(risk_score: int, policy: DispatchPolicy) -> int:
+    return policy.travel_buffer_by_score.get(
+        risk_score,
+        max(policy.travel_buffer_by_score.values()),
+    )
+
+
+def _summarise_recommendation(allocation: Dict[str, Any], total_penalty: int) -> str:
     if total_penalty == 0:
-        return "All corridors can be fully served within available resources."
+        return "All Day0/Day1 corridor demand can be served within available resources."
 
     lines = [f"Total penalty score: {total_penalty}. Shortfalls detected:"]
     for day in ["Day0", "Day1"]:
-        for corridor_id, stats in plan.get(day, {}).get("corridors", {}).items():
+        for corridor_id, stats in allocation.get(day, {}).get("corridors", {}).items():
             if not stats.get("can_dispatch_all"):
                 lines.append(
-                    f"  [{day}] {corridor_id} ({stats['sla_tier']}): "
-                    f"{stats['undelivered_units']} units undelivered. "
-                    f"Penalty: {stats['corridor_penalty']} pts."
+                    f"{day} {corridor_id}: {stats['undelivered_units']} units undelivered "
+                    f"with {stats['corridor_penalty']} penalty points."
                 )
     return " ".join(lines)

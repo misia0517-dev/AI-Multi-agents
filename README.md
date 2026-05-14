@@ -94,6 +94,30 @@ The pipeline will:
 pdf_context → csv_analysis → weather → resource_allocator → planner → report → email
 ```
 
+## Evaluations
+
+Run the local deterministic checks:
+
+```bash
+pytest
+```
+
+Run the embedded eval harness against one passing built-in scenario:
+
+```bash
+python -m evals --scenario happy_path
+```
+
+`python -m evals` runs all built-in fixtures, including intentionally failing scenarios used to verify the validators catch bad outputs.
+
+Run the actual dispatch pipeline and score the completed LangGraph state:
+
+```bash
+RUN_EVALS=true python src/main.py
+```
+
+Eval reports are written to `eval_results/`.
+
 ---
 
 ## Data Quality Rules

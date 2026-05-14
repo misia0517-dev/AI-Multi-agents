@@ -12,6 +12,9 @@ __pycache__/
 # Vector database (auto-generated at runtime)
 chroma_db/
 
+# Eval outputs
+eval_results/
+
 # macOS
 .DS_Store
 
