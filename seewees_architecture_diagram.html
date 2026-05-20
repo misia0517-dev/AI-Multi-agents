@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>SeeWeeS Multi-Agent Architecture</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f8f9fa; padding: 16px; }
+
+  .container { display: grid; grid-template-columns: 340px 1fr; gap: 16px; max-width: 1100px; margin: 0 auto; }
+
+  .legend { display: flex; gap: 12px; margin-bottom: 12px; font-size: 11px; flex-wrap: wrap; }
+  .legend-item { display: flex; align-items: center; gap: 5px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+
+  .file-section h3 { font-size: 12px; color: #666; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px; }
+  .file-card { border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; border-left: 3px solid transparent; }
+  .file-card.new      { background: #e8f5e9; border-left-color: #43a047; }
+  .file-card.mod      { background: #fff8e1; border-left-color: #fb8c00; }
+  .file-card.unchanged{ background: #f5f5f5; border-left-color: #bdbdbd; }
+
+  .file-name { font-size: 12px; font-weight: 600; color: #222; font-family: monospace; }
+  .file-role { font-size: 11px; color: #555; margin-top: 3px; line-height: 1.4; }
+  .badge { display: inline-block; font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 3px; margin-left: 6px; vertical-align: middle; }
+  .badge.new        { background: #43a047; color: #fff; }
+  .badge.modified   { background: #fb8c00; color: #fff; }
+  .badge.key-change { background: #e53935; color: #fff; }
+
+  .diff { font-size: 10px; color: #777; margin-top: 5px; padding-left: 8px; border-left: 2px solid #e0e0e0; line-height: 1.5; }
+  .diff span.plus  { color: #2e7d32; font-weight: 600; }
+  .diff span.minus { color: #c62828; }
+
+  /* ── Flow diagram ─────────────────────────────────────────────────── */
+  .flow-col   { display: flex; flex-direction: column; gap: 12px; }
+  .flow-panel { background: #fff; border-radius: 10px; padding: 14px 16px; border: 1px solid #e0e0e0; }
+  .flow-panel h3 { font-size: 12px; color: #444; font-weight: 700; margin-bottom: 10px; text-transform: uppercase; letter-spacing: .05em; }
+
+  .graph { display: flex; flex-direction: column; align-items: center; gap: 0; }
+  .row   { display: flex; gap: 10px; justify-content: center; align-items: center; margin: 2px 0; }
+
+  /* Node: flex-column so name and subtitle stack vertically */
+  .node {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    border-radius: 6px; font-size: 11px; font-weight: 600; text-align: center;
+    padding: 7px 12px; min-width: 110px; border: 2px solid transparent; line-height: 1.4;
+  }
+  .node .sub { font-size: 9px; font-weight: 400; margin-top: 2px; }
+
+  .node.start { background: #e8eaf6; border-color: #5c6bc0; color: #3949ab; }
+  .node.end   { background: #fce4ec; border-color: #e91e63; color: #c2185b; }
+  .node.basic { background: #f5f5f5; border-color: #bdbdbd; color: #333; }
+  .node.mod   { background: #fff3e0; border-color: #fb8c00; color: #e65100; }
+  .node.par   { background: #e3f2fd; border-color: #1e88e5; color: #1565c0; }
+
+  .arr          { font-size: 14px; color: #999; line-height: 1; text-align: center; }
+  .change-badge { font-size: 9px; background: #e53935; color: #fff; padding: 1px 5px; border-radius: 3px; margin-left: 6px; font-weight: 700; }
+  .section-label{ font-size: 9px; color: #999; text-align: center; margin: 3px 0; letter-spacing: .04em; }
+
+  .parallel-box {
+    border: 1.5px dashed #1e88e5; border-radius: 8px;
+    padding: 10px 12px; display: flex; gap: 10px; align-items: center; position: relative;
+  }
+  .parallel-box .par-label {
+    position: absolute; top: -9px; left: 8px;
+    background: #e3f2fd; color: #1565c0; font-size: 9px; font-weight: 700; padding: 0 4px;
+  }
+  .parallel-box-orange {
+    border: 1.5px dashed #fb8c00; border-radius: 8px;
+    padding: 10px 12px; display: flex; gap: 10px; align-items: center; position: relative;
+  }
+  .parallel-box-orange .par-label {
+    position: absolute; top: -9px; left: 8px;
+    background: #fff3e0; color: #e65100; font-size: 9px; font-weight: 700; padding: 0 4px;
+  }
+
+  /* ── Penalty model ────────────────────────────────────────────────── */
+  .penalty-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 11px; }
+  .p-item { background: #f9f9f9; border-radius: 6px; padding: 6px 8px; border-left: 3px solid; }
+  .p-item.t1  { border-color: #e53935; }
+  .p-item.t2  { border-color: #fb8c00; }
+  .p-item.cc  { border-color: #8e24aa; }
+  .p-item .pts{ font-size: 14px; font-weight: 700; display: block; }
+  .p-item .lbl{ color: #666; font-size: 10px; }
+
+  /* ── Key changes ──────────────────────────────────────────────────── */
+  .changes-list { font-size: 11px; }
+  .change-row { display: flex; gap: 8px; padding: 6px 0; border-bottom: 1px solid #f0f0f0; align-items: flex-start; }
+  .change-row:last-child { border-bottom: none; }
+  .chg-num   { background: #e53935; color: #fff; font-size: 10px; font-weight: 700; border-radius: 50%; width: 18px; height: 18px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+  .chg-title { font-weight: 600; color: #222; display: block; margin-bottom: 2px; }
+  .chg-desc  { color: #666; line-height: 1.4; }
+
+  .title-row  { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .main-title { font-size: 16px; font-weight: 700; color: #111; }
+  .sub-title  { font-size: 11px; color: #777; }
+</style>
+</head>
+<body>
+
+<div class="title-row">
+  <div>
+    <div class="main-title">SeeWeeS Multi-Agent Architecture</div>
+    <div class="sub-title">Option 5 · Multi-Region &amp; Multi-Day Resource Planning · MSBA AI Agents Challenge 2026</div>
+  </div>
+</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="dot" style="background:#43a047"></div> New file</div>
+  <div class="legend-item"><div class="dot" style="background:#fb8c00"></div> Modified file</div>
+  <div class="legend-item"><div class="dot" style="background:#bdbdbd"></div> Unchanged</div>
+  <div class="legend-item"><div class="dot" style="background:#1e88e5"></div> Parallel execution</div>
+  <div class="legend-item"><div class="dot" style="background:#e53935"></div> Key structural change</div>
+</div>
+
+<div class="container">
+
+  <!-- ── LEFT: File cards ─────────────────────────────────────────── -->
+  <div class="file-section">
+    <h3>Source Files</h3>
+
+    <div class="file-card mod">
+      <div class="file-name">graph.py <span class="badge modified">MODIFIED</span> <span class="badge key-change">3 KEY CHANGES</span></div>
+      <div class="file-role">LangGraph StateGraph — wires all nodes, edges, conditional routing</div>
+      <div class="diff">
+        <span class="plus">+ Parallel fan-out from START (pdf + csv)</span><br>
+        <span class="plus">+ Send API weather fan-out per corridor</span><br>
+        <span class="plus">+ Validation loop with conditional edge</span><br>
+        <span class="plus">+ Annotated[List, operator.add] reducer</span>
+      </div>
+    </div>
+
+    <div class="file-card mod">
+      <div class="file-name">agents.py <span class="badge modified">MODIFIED</span></div>
+      <div class="file-role">LLM wrapper functions — invokes Claude Sonnet 4.6 with structured prompts</div>
+      <div class="diff">
+        <span class="minus">− GPT → </span><span class="plus">+ Claude Sonnet 4.6 (ChatAnthropic)</span><br>
+        <span class="plus">+ run_planner_retry_agent() for retry loop</span>
+      </div>
+    </div>
+
+    <div class="file-card mod">
+      <div class="file-name">prompts.py <span class="badge modified">MODIFIED</span></div>
+      <div class="file-role">ChatPromptTemplate definitions for all 5 agent roles</div>
+      <div class="diff">
+        <span class="plus">+ PLANNER_RETRY_PROMPT (violation-aware)</span><br>
+        <span class="plus">+ Strict HTML layout rules in REPORT_PROMPT</span>
+      </div>
+    </div>
+
+    <div class="file-card mod">
+      <div class="file-name">tracing.py <span class="badge modified">MODIFIED</span></div>
+      <div class="file-role">LangSmith tracing initializer — called at startup in main.py</div>
+      <div class="diff">
+        <span class="plus">+ Key validation + startup logging</span><br>
+        <span class="plus">+ Auto-disable if LANGCHAIN_API_KEY missing</span>
+      </div>
+    </div>
+
+    <div class="file-card mod">
+      <div class="file-name">tools/weather_tools.py <span class="badge modified">MODIFIED</span></div>
+      <div class="file-role">Open-Meteo weather API — fetches 48h forecasts for corridor waypoints</div>
+      <div class="diff">
+        <span class="plus">+ get_single_corridor_weather_risk() for parallel Send API use</span>
+      </div>
+    </div>
+
+    <div class="file-card new">
+      <div class="file-name">tools/dashboard_tools.py <span class="badge new">NEW</span></div>
+      <div class="file-role">KPI gauge bar HTML generator — dark-theme dashboard from live state (currently disabled)</div>
+      <div class="diff">
+        <span class="plus">+ generate_kpi_dashboard_html(state)</span>
+      </div>
+    </div>
+
+    <div class="file-card unchanged">
+      <div class="file-name">tools/csv_tools.py</div>
+      <div class="file-role">Pandas CSV analysis — DQ rules DQ-01~04, KPI computation, anomaly detection</div>
+    </div>
+
+    <div class="file-card unchanged">
+      <div class="file-name">tools/pdf_tools.py</div>
+      <div class="file-role">ChromaDB RAG indexer — ingests Dispatch Playbook PDF, retrieves rule snippets</div>
+    </div>
+
+    <div class="file-card unchanged">
+      <div class="file-name">tools/resource_tools.py</div>
+      <div class="file-role">Greedy resource allocator — assigns trucks &amp; drivers, computes penalty scores</div>
+    </div>
+
+    <div class="file-card unchanged">
+      <div class="file-name">tools/email_tools.py</div>
+      <div class="file-role">Gmail SMTP sender — delivers HTML report to REPORT_EMAIL_TO</div>
+    </div>
+
+    <div class="file-card unchanged">
+      <div class="file-name">main.py</div>
+      <div class="file-role">Entry point — calls init_langsmith_tracing(), builds graph, invokes with data file paths</div>
+    </div>
+  </div>
+
+  <!-- ── RIGHT: Flow + panels ─────────────────────────────────────── -->
+  <div class="flow-col">
+
+    <div class="flow-panel">
+      <h3>LangGraph Execution Flow</h3>
+      <div class="graph">
+
+        <div class="row">
+          <div class="node start">START</div>
+        </div>
+        <div class="arr">↓</div>
+
+        <div class="section-label">① PARALLEL FAN-OUT (Change 1) <span class="change-badge">NEW</span></div>
+        <div class="parallel-box">
+          <div class="par-label">run concurrently</div>
+          <div class="node par">
+            pdf_context
+            <span class="sub">RAG → business rules</span>
+          </div>
+          <div class="node par">
+            csv_analysis
+            <span class="sub">KPIs · anomalies</span>
+          </div>
+        </div>
+        <div class="arr">↓ fan-in</div>
+
+        <div class="row">
+          <div class="node basic">
+            router
+            <span class="sub">pass-through</span>
+          </div>
+        </div>
+        <div class="arr">↓</div>
+
+        <div class="section-label">② SEND API WEATHER FAN-OUT (Change 2) <span class="change-badge">NEW</span></div>
+        <div class="parallel-box-orange">
+          <div class="par-label">one node per corridor</div>
+          <div class="node mod">
+            weather
+            <span class="sub">C1_NJ_BOS</span>
+          </div>
+          <div class="node mod">
+            weather
+            <span class="sub">C2_NJ_PHL</span>
+          </div>
+          <div class="node mod">
+            weather
+            <span class="sub">C3 …</span>
+          </div>
+        </div>
+        <div class="arr">↓ operator.add accumulator → fan-in</div>
+
+        <div class="row">
+          <div class="node basic">
+            collect_weather
+            <span class="sub">aggregates corridor risks</span>
+          </div>
+        </div>
+        <div class="arr">↓</div>
+
+        <div class="row">
+          <div class="node basic">
+            resource_allocator
+            <span class="sub">greedy alloc · penalty model</span>
+          </div>
+        </div>
+        <div class="arr">↓</div>
+
+        <div class="row">
+          <div class="node mod">
+            planner
+            <span class="sub">dispatch plan (Day0 + Day1)</span>
+          </div>
+        </div>
+        <div class="arr">↓</div>
+
+        <div class="section-label">③ VALIDATION LOOP (Change 3) <span class="change-badge">NEW</span></div>
+        <div class="row">
+          <div class="node mod">
+            validate
+            <span class="sub">3 constraint checks</span>
+          </div>
+        </div>
+
+        <div class="row" style="margin-top:6px; gap:30px;">
+          <div style="display:flex;flex-direction:column;align-items:center;gap:3px;">
+            <div style="font-size:9px;color:#e53935;font-weight:700;">FAIL (≤ 2 retries)</div>
+            <div style="font-size:13px;color:#e53935;">↺ back to planner</div>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:3px;">
+            <div style="font-size:9px;color:#2e7d32;font-weight:700;">PASS</div>
+            <div style="font-size:14px;color:#2e7d32;">↓</div>
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="node basic">
+            report
+            <span class="sub">HTML report generation</span>
+          </div>
+        </div>
+        <div class="arr">↓</div>
+
+        <div class="row">
+          <div class="node basic">
+            email
+            <span class="sub">SMTP → miawu@g.ucla.edu</span>
+          </div>
+        </div>
+        <div class="arr">↓</div>
+
+        <div class="row">
+          <div class="node end">END</div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Bottom 2-col panels -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+
+      <div class="flow-panel">
+        <h3>Penalty Model (resource_tools.py)</h3>
+        <div class="penalty-grid">
+          <div class="p-item t1">
+            <span class="pts" style="color:#e53935">100 pts</span>
+            <span class="lbl">Tier 1 undelivered unit</span>
+          </div>
+          <div class="p-item t2">
+            <span class="pts" style="color:#fb8c00">40 pts</span>
+            <span class="lbl">Tier 2 undelivered unit</span>
+          </div>
+          <div class="p-item cc">
+            <span class="pts" style="color:#8e24aa">+80 pts</span>
+            <span class="lbl">Cold-chain breach surcharge</span>
+          </div>
+          <div class="p-item" style="border-color:#1e88e5;">
+            <span class="pts" style="color:#1565c0">×1.5×</span>
+            <span class="lbl">Weather risk multiplier (escalation)</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="flow-panel">
+        <h3>Key Changes vs Starter Repo</h3>
+        <div class="changes-list">
+          <div class="change-row">
+            <div class="chg-num">1</div>
+            <div>
+              <span class="chg-title">Parallel fan-out from START</span>
+              <span class="chg-desc">pdf_context + csv_analysis run concurrently instead of sequentially</span>
+            </div>
+          </div>
+          <div class="change-row">
+            <div class="chg-num">2</div>
+            <div>
+              <span class="chg-title">Send API weather fan-out</span>
+              <span class="chg-desc">One node_weather_corridor per corridor; results merged via operator.add</span>
+            </div>
+          </div>
+          <div class="change-row">
+            <div class="chg-num">3</div>
+            <div>
+              <span class="chg-title">Validation retry loop</span>
+              <span class="chg-desc">validate checks 3 constraint classes; loops back to planner up to 2×</span>
+            </div>
+          </div>
+          <div class="change-row">
+            <div class="chg-num">4</div>
+            <div>
+              <span class="chg-title">LangSmith tracing enabled</span>
+              <span class="chg-desc">Full run visibility via LANGCHAIN_TRACING_V2=true in .env</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,31 @@
+# Environment & secrets
+.env
+.Rhistory
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Vector database (auto-generated at runtime)
+chroma_db/
+
+# Eval outputs
+eval_results/
+
+# macOS
+.DS_Store
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+
+# Jupyter
+.ipynb_checkpoints/

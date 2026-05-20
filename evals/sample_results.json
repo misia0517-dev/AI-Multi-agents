@@ -1,0 +1,181 @@
+{
+  "weather_hallucination": {
+    "scenario_name": "weather_hallucination",
+    "agent_provider": "test",
+    "model_name": "fixture",
+    "timestamp": "2026-05-08T02:30:33",
+    "overall_score": 0.8476,
+    "overall_passed": false,
+    "deterministic_score": 0.8476,
+    "judge_score": "N/A",
+    "pass_threshold": 0.7,
+    "deterministic_results": [
+      {
+        "name": "sla_compliance",
+        "passed": true,
+        "score": 1.0,
+        "weight": 2.0,
+        "details": "All corridors within SLA limits"
+      },
+      {
+        "name": "cold_chain_coverage",
+        "passed": false,
+        "score": 0.9818,
+        "weight": 2.0,
+        "details": "NE-I95: cold-chain coverage=98.2% (need 27.5 vol, have 27.0 cap)"
+      },
+      {
+        "name": "buffer_policy",
+        "passed": true,
+        "score": 1.0,
+        "weight": 1.5,
+        "details": "Buffer policy correctly applied"
+      },
+      {
+        "name": "resource_utilization",
+        "passed": true,
+        "score": 1.0,
+        "weight": 1.5,
+        "details": "Utilization within acceptable range"
+      },
+      {
+        "name": "cost_guardrails",
+        "passed": true,
+        "score": 1.0,
+        "weight": 1.0,
+        "details": "All corridors within cost ceiling"
+      },
+      {
+        "name": "fairness_metrics",
+        "passed": true,
+        "score": 1.0,
+        "weight": 1.0,
+        "details": "Fair allocation (ratio=1.000, NSW=0.8000)"
+      },
+      {
+        "name": "weather_consistency",
+        "passed": true,
+        "score": 1.0,
+        "weight": 1.0,
+        "details": "Weather flags and scores are consistent"
+      },
+      {
+        "name": "plan_completeness",
+        "passed": false,
+        "score": 0.8333,
+        "weight": 1.5,
+        "details": "Completeness score: 83.3%",
+        "sub_results": [
+          {
+            "name": "corridor_coverage",
+            "passed": true,
+            "score": 1.0,
+            "weight": 1.0,
+            "details": "All corridors covered"
+          },
+          {
+            "name": "weather_reference",
+            "passed": true,
+            "score": 1.0,
+            "weight": 1.0,
+            "details": "Found in dispatch plan"
+          },
+          {
+            "name": "buffer_mention",
+            "passed": true,
+            "score": 1.0,
+            "weight": 1.0,
+            "details": "Found in dispatch plan"
+          },
+          {
+            "name": "resource_assignment",
+            "passed": true,
+            "score": 1.0,
+            "weight": 1.0,
+            "details": "Found in dispatch plan"
+          },
+          {
+            "name": "contingency",
+            "passed": false,
+            "score": 0.0,
+            "weight": 1.0,
+            "details": "MISSING in dispatch plan"
+          },
+          {
+            "name": "kpi_impact",
+            "passed": true,
+            "score": 1.0,
+            "weight": 1.0,
+            "details": "Found in dispatch plan"
+          }
+        ]
+      },
+      {
+        "name": "weather_faithfulness",
+        "passed": false,
+        "score": 0.0,
+        "weight": 1.5,
+        "details": "Hallucinated weather term: 'snowfall'; Hallucinated weather term: 'snow accumulation'; Hallucinated weather term: 'inches of snow'; Hallucinated weather term: 'visibility'"
+      },
+      {
+        "name": "report_structure",
+        "passed": false,
+        "score": 0.5,
+        "weight": 1.0,
+        "details": "Report structure score: 50.0%",
+        "sub_results": [
+          {
+            "name": "weather_summary",
+            "passed": true,
+            "score": 1.0,
+            "weight": 1.0,
+            "details": "Found in report"
+          },
+          {
+            "name": "travel_buffer",
+            "passed": false,
+            "score": 0.0,
+            "weight": 1.0,
+            "details": "MISSING in report"
+          },
+          {
+            "name": "shipment_counts",
+            "passed": false,
+            "score": 0.0,
+            "weight": 1.0,
+            "details": "MISSING in report"
+          },
+          {
+            "name": "sla_flags",
+            "passed": false,
+            "score": 0.0,
+            "weight": 1.0,
+            "details": "MISSING in report"
+          },
+          {
+            "name": "html_table",
+            "passed": true,
+            "score": 1.0,
+            "weight": 1.0,
+            "details": "Found in report"
+          },
+          {
+            "name": "corridor_data",
+            "passed": true,
+            "score": 1.0,
+            "weight": 1.0,
+            "details": "Found in report"
+          }
+        ]
+      },
+      {
+        "name": "validation_loop",
+        "passed": true,
+        "score": 1.0,
+        "weight": 1.0,
+        "details": "Validation passed \u2014 plan is valid"
+      }
+    ],
+    "judge_results": []
+  }
+}
