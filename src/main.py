@@ -43,7 +43,7 @@ if __name__ == "__main__":
     app = build_graph()
 
     state = {
-        "pdf_path":      "data-for-enhancement/playbook_variant_02_weather_escalation_score2.md",
+        "pdf_path":      "data-for-enhancement/SeeWeeS Specialty Dispatch Playbook.md",
         "csv_path":      "data-for-enhancement/Incoming_shipments_14d_multi_corridor.csv",
         "resource_path": "data-for-enhancement/Resource_availability_48h.csv",
     }
