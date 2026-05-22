@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import pandas as pd
 
@@ -35,22 +35,25 @@ def allocate_resources(
     for day in ["Day0", "Day1"]:
         remaining = dict(availability.get(day, {}))
         day_plan: Dict[str, Any] = {
-                  "available": dict(remaining),
-                  "corridors": {},
-                  "day_total_penalty": 0,
-                  "resource_shortfall": {},
-       }
+            "available": dict(remaining),
+            "corridors": {},
+            "day_total_penalty": 0,
+            "resource_shortfall": {},
+        }
 
-
-        corridor_order = [c for c in policy.corridor_priority if c in corridor_day_summary]
-        corridor_order.extend(c for c in corridor_day_summary if c not in corridor_order)
+        corridor_order = _corridor_allocation_order(
+            corridor_day_summary=corridor_day_summary,
+            day=day,
+            policy=policy,
+            corridor_weather_risk=corridor_weather_risk or {},
+        )
 
         for corridor_id in corridor_order:
             stats = corridor_day_summary.get(corridor_id, {}).get(day, {})
             if not stats:
                 continue
 
-            sla_tier = stats.get("sla_tier", "Tier 2")
+            sla_tier = stats.get("sla_tier", policy.corridor_sla_tier.get(corridor_id, "Tier 2"))
             need_temp = int(stats.get("required_temp_trucks", 0))
             need_std = int(stats.get("required_std_trucks", 0))
             temp_units = int(stats.get("temp_controlled_units", 0))
@@ -58,7 +61,9 @@ def allocate_resources(
             total_units = int(stats.get("total_valid_units", 0))
 
             allocated_temp = min(need_temp, int(remaining.get("truck_temp_controlled", 0)))
-            remaining["truck_temp_controlled"] = int(remaining.get("truck_temp_controlled", 0)) - allocated_temp
+            remaining["truck_temp_controlled"] = (
+                int(remaining.get("truck_temp_controlled", 0)) - allocated_temp
+            )
             temp_shortfall = need_temp - allocated_temp
 
             allocated_std = min(need_std, int(remaining.get("truck_standard", 0)))
@@ -74,7 +79,10 @@ def allocate_resources(
             undelivered_temp = min(temp_units, temp_shortfall * units_per_truck)
             undelivered_std = min(std_units, std_shortfall * units_per_truck)
             undelivered_driver = min(total_units, driver_shortfall * units_per_truck)
-            undelivered_units = min(total_units, undelivered_temp + undelivered_std + undelivered_driver)
+            undelivered_units = min(
+                total_units,
+                undelivered_temp + undelivered_std + undelivered_driver,
+            )
 
             sla_penalty_rate = (
                 policy.penalty["tier1_sla_violation"]
@@ -121,6 +129,44 @@ def allocate_resources(
         "recommendation": _summarise_recommendation(allocation, total_penalty),
     }
     return allocation
+
+
+def _corridor_allocation_order(
+    corridor_day_summary: Dict[str, Any],
+    day: str,
+    policy: DispatchPolicy,
+    corridor_weather_risk: Dict[str, Any],
+) -> List[str]:
+    policy_order = {
+        corridor_id: idx
+        for idx, corridor_id in enumerate(policy.corridor_priority)
+    }
+
+    corridors = list(corridor_day_summary.keys())
+
+    def sort_key(corridor_id: str) -> tuple[int, int, int, int]:
+        stats = corridor_day_summary.get(corridor_id, {}).get(day, {})
+        sla_tier = stats.get("sla_tier", policy.corridor_sla_tier.get(corridor_id, "Tier 2"))
+        total_units = int(stats.get("total_valid_units", 0))
+        temp_units = int(stats.get("temp_controlled_units", 0))
+        weather_score = int(
+            corridor_weather_risk.get(corridor_id, {}).get(
+                "risk_score_48h",
+                corridor_weather_risk.get(corridor_id, {}).get("risk_score_0_3", 0),
+            )
+        )
+
+        tier_rank = 0 if sla_tier == "Tier 1" else 1
+
+        return (
+            tier_rank,
+            -weather_score,
+            -temp_units,
+            -total_units,
+            policy_order.get(corridor_id, len(policy_order)),
+        )
+
+    return sorted(corridors, key=sort_key)
 
 
 def _travel_buffer(risk_score: int, policy: DispatchPolicy) -> int:

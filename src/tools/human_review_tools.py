@@ -11,6 +11,8 @@ def detect_human_review_triggers(
     resource_allocation: Dict[str, Any],
     resource_reserve: Dict[str, Dict[str, int]] | None = None,
 ) -> Dict[str, Any]:
+    resource_reserve = resource_reserve or {}
+
     triggers: Dict[str, Any] = {
         "special_case_items": special_case_items if special_case_items.get("present") else None,
         "weather_escalation_corridors": [],
@@ -18,19 +20,27 @@ def detect_human_review_triggers(
     }
 
     for day in ["Day0", "Day1"]:
-        resource_reserve = resource_reserve or {}
         day_plan = resource_allocation.get(day, {})
         corridors = day_plan.get("corridors", {})
+
         for corridor_id, stats in corridors.items():
-            if int(stats.get("total_units", 0)) > 0 and int(stats.get("weather_risk_score", 0)) >= 3:
+            total_units = int(stats.get("total_units", 0))
+            escalation_required = bool(stats.get("escalation_required", False))
+            weather_score = int(stats.get("weather_risk_score", 0))
+
+            if total_units > 0 and escalation_required:
                 triggers["weather_escalation_corridors"].append({
                     "day": day,
                     "corridor_id": corridor_id,
-                    "weather_risk_score": int(stats.get("weather_risk_score", 0)),
+                    "weather_risk_score": weather_score,
                 })
 
         remaining = day_plan.get("remaining_pool", {})
-        temp_allocated = sum(int(stats.get("allocated_temp_trucks", 0)) for stats in corridors.values())
+        temp_allocated = sum(
+            int(stats.get("allocated_temp_trucks", 0))
+            for stats in corridors.values()
+            if isinstance(stats, dict)
+        )
         reserved_temp = int(resource_reserve.get(day, {}).get("truck_temp_controlled", 0))
 
         if (
@@ -70,6 +80,7 @@ def collect_human_review_decision(
 
     print("\n=== HUMAN DISPATCH REVIEW REQUIRED ===")
     print("Review only the triggered business risks below.")
+
     retry_policy: Dict[str, Any] = {}
     approvals: List[str] = []
 
@@ -86,26 +97,32 @@ def collect_human_review_decision(
 
     weather_corridors = triggers.get("weather_escalation_corridors", [])
     hold_corridors = set()
+
     for item in weather_corridors:
+        day = item["day"]
         corridor_id = item["corridor_id"]
         score = item["weather_risk_score"]
-        print(f"\nSevere weather detected: {item['day']} {corridor_id}, score={score}")
+
+        print(f"\nSevere weather escalation detected: {day} {corridor_id}, score={score}")
         choice = _ask_binary(
-            f"{corridor_id} weather score 3: 0 = approve with escalation, 1 = hold corridor and retry"
+            f"{corridor_id} weather escalation: 0 = approve with escalation, 1 = hold corridor and retry"
         )
         if choice == 1:
             hold_corridors.add(corridor_id)
         else:
-            approvals.append(f"weather_escalation_approved:{item['day']}:{corridor_id}")
+            approvals.append(f"weather_escalation_approved:{day}:{corridor_id}")
+
     if hold_corridors:
         retry_policy["hold_corridors"] = sorted(hold_corridors)
 
     zero_temp_days = triggers.get("zero_temp_buffer_days", [])
     reserve_by_day: Dict[str, Dict[str, int]] = {}
+
     if len(zero_temp_days) > 1:
         affected_days = [str(item["day"]) for item in zero_temp_days]
         print(f"\nZero spare temp-controlled trucks detected on: {', '.join(affected_days)}.")
         print("Risk: no backup capacity for clinical-trial or unplanned cold-chain demand.")
+
         choice = _ask_zero_temp_grouped(affected_days)
         if choice == 0:
             for day in affected_days:
@@ -117,6 +134,7 @@ def collect_human_review_decision(
             _collect_zero_temp_day_by_day(zero_temp_days, reserve_by_day, approvals)
     else:
         _collect_zero_temp_day_by_day(zero_temp_days, reserve_by_day, approvals)
+
     if reserve_by_day:
         retry_policy["resource_reserve"] = reserve_by_day
 
@@ -195,6 +213,7 @@ def summarize_human_review(
         )
 
     lines: List[str] = ["Human review required:"]
+
     special = triggers.get("special_case_items")
     if special:
         lines.append(f"- Special-case item(s) detected: {special.get('items', [])}")
@@ -214,6 +233,7 @@ def summarize_human_review(
 
     lines.append("")
     lines.append("Human decisions:")
+
     hold_item_ids = retry_policy.get("hold_item_ids", [])
     hold_corridors = retry_policy.get("hold_corridors", [])
     resource_reserve = retry_policy.get("resource_reserve", {})
@@ -227,6 +247,7 @@ def summarize_human_review(
     if weather:
         if hold_corridors:
             lines.append(f"- Held severe-weather corridor(s): {hold_corridors}")
+
         approved_weather = [
             approval.split(":", 1)[1]
             for approval in approvals
@@ -241,8 +262,10 @@ def summarize_human_review(
             for approval in approvals
             if approval.startswith("zero_temp_buffer_approved:")
         ]
+
         for day in approved_days:
             lines.append(f"- Approved zero temp-controlled truck buffer on {day}.")
+
         for day in sorted(resource_reserve):
             temp_count = int(resource_reserve[day].get("truck_temp_controlled", 0))
             if temp_count:
@@ -255,6 +278,7 @@ def summarize_human_review(
 
     lines.append("")
     lines.append("Operational effect:")
+
     if hold_item_ids:
         lines.append(
             "- Held special-case item(s) were excluded from dispatch demand and are not counted as undelivered."
@@ -265,10 +289,12 @@ def summarize_human_review(
         lines.append(
             "- Do not describe any special-case item as missing unique_item_id unless it is explicitly listed in the missing-ID data."
         )
+
     if hold_corridors:
         lines.append(
             "- Held corridor demand was excluded from dispatch demand and should be reported as human-held, not resource shortfall."
         )
+
     if resource_reserve:
         lines.append(
             "- Reserved temp-controlled trucks reduced available dispatch capacity for the affected day(s)."
@@ -276,6 +302,7 @@ def summarize_human_review(
         lines.append(
             "- Temp-controlled truck reserves are backup-capacity decisions and are not reserved for held/quarantined items."
         )
+
     lines.append(
         "- Remaining undelivered units should be explained from actual allocation shortfalls: temp truck, standard truck, or driver."
     )
@@ -291,9 +318,11 @@ def _collect_zero_temp_day_by_day(
     for item in zero_temp_days:
         day = item["day"]
         print(f"\nZero spare temp-controlled trucks detected on {day}.")
+
         choice = _ask_binary(
             f"{day} temp buffer: 0 = approve zero buffer, 1 = reserve 1 temp truck and retry"
         )
+
         if choice == 1:
             reserve_by_day.setdefault(day, {})["truck_temp_controlled"] = 1
         else:
@@ -316,6 +345,7 @@ def _ask_zero_temp_grouped(affected_days: List[str]) -> int:
         f"1 = reserve 1 temp-controlled truck on {day_text} and retry allocation\n"
         "2 = decide day by day"
     )
+
     while True:
         raw = input(f"{prompt}\nEnter 0, 1, or 2: ").strip()
         if raw in {"0", "1", "2"}:

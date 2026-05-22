@@ -1,6 +1,6 @@
 # SeeWeeS Ops — Multi-Agent Dispatch System
 
-A multi-agent AI pipeline built with LangGraph and Claude (Anthropic) for multi-corridor dispatch planning and operations analysis. The system ingests shipment data, fetches live weather, allocates resources, generates a validated dispatch plan, and emails an executive HTML report — all automatically.
+A multi-agent AI pipeline built with LangGraph and Claude/Anthropic for multi-corridor dispatch planning and operations analysis. The system ingests shipment data, fetches live weather, allocates resources, generates a validated dispatch plan, and emails an executive HTML report — all automatically.
 
 ---
 
@@ -9,7 +9,7 @@ A multi-agent AI pipeline built with LangGraph and Claude (Anthropic) for multi-
 - Python 3.10+
 - pip
 - A Gmail account (or other SMTP provider) for email delivery
-- An [Anthropic API key](https://console.anthropic.com/settings/keys)
+- An Anthropic API key
 - A [LangSmith API key](https://smith.langchain.com) *(optional — for tracing)*
 
 ---
@@ -75,6 +75,22 @@ python src/main.py
 ```
 
 The pipeline will run end-to-end and print progress as it goes. When complete, an HTML report is printed to the console and emailed to `REPORT_EMAIL_TO` (if configured).
+
+## Running the Streamlit App
+
+The Streamlit app is an optional executive-facing interface over the same dispatch logic. It keeps the CLI flow intact while replacing terminal human-review prompts with browser controls.
+
+```bash
+streamlit run streamlit_app.py
+```
+
+The app preloads the default playbook, shipment CSV, and resource availability file. It shows only the human-review risks that are actually triggered:
+
+- special clinical-trial item review
+- severe weather escalation review
+- zero spare temp-controlled truck buffer review
+
+If no review trigger is detected, the app continues directly to planning, validation, and the final executive HTML report.
 
 ---
 
@@ -200,6 +216,7 @@ Make sure you're using Python 3.10+ and that `pip` is up to date (`pip install -
 
 **`chroma_db/` errors or stale vector index**
 Delete the `chroma_db/` directory between runs to force a fresh index:
+
 ```bash
 rm -rf chroma_db/
 ```

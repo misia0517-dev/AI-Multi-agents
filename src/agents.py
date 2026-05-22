@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import Dict, Any, List
 from langchain_anthropic import ChatAnthropic
+
 from prompts import (
     PDF_CONTEXT_PROMPT,
     OPS_ANALYSIS_PROMPT,
@@ -15,12 +16,12 @@ llm = ChatAnthropic(
     max_tokens=4096,
 )
 
-# Report agent needs more tokens — full HTML doc with tables, CSS, and multiple sections
 llm_report = ChatAnthropic(
     model="claude-sonnet-4-6",
     temperature=0.2,
     max_tokens=8192,
 )
+
 
 
 def run_context_agent(snippets: str) -> str:

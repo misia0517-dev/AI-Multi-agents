@@ -63,7 +63,7 @@ def test_weather_risk_thresholds_and_corridor_aggregation(monkeypatch):
         },
     }
 
-    def fake_forecast(lat: str, lon: str, tz: str = weather_tools.TZ):
+    def fake_forecast(lat: str, lon: str, tz: str = weather_tools.TZ, **kwargs):
         return forecasts_by_lat[lat]
 
     monkeypatch.setattr(weather_tools, "get_weather_forecast", fake_forecast)
@@ -94,6 +94,7 @@ def test_resource_allocator_prioritizes_tier1_when_capacity_is_scarce():
     corridor_day_summary = {
         "C1_I95_NJ_BOS": {
             "Day0": {
+                "sla_tier": "Tier 1",
                 "total_valid_units": 10,
                 "temp_controlled_units": 5,
                 "standard_units": 5,
@@ -102,6 +103,7 @@ def test_resource_allocator_prioritizes_tier1_when_capacity_is_scarce():
                 "required_drivers": 2,
             },
             "Day1": {
+                "sla_tier": "Tier 1",
                 "total_valid_units": 0,
                 "temp_controlled_units": 0,
                 "standard_units": 0,
@@ -112,6 +114,7 @@ def test_resource_allocator_prioritizes_tier1_when_capacity_is_scarce():
         },
         "C2_NJ_PHL": {
             "Day0": {
+                "sla_tier": "Tier 2",
                 "total_valid_units": 10,
                 "temp_controlled_units": 5,
                 "standard_units": 5,
@@ -120,6 +123,7 @@ def test_resource_allocator_prioritizes_tier1_when_capacity_is_scarce():
                 "required_drivers": 2,
             },
             "Day1": {
+                "sla_tier": "Tier 2",
                 "total_valid_units": 0,
                 "temp_controlled_units": 0,
                 "standard_units": 0,
